@@ -7,12 +7,19 @@
 //
 
 import UIKit
+import CoreData
 
-class doListViewController: UITableViewController {
+class doListViewController: UITableViewController{
 
     var itemArray = [Item]()
     
-    let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("items.plist")
+    var selectedCategory : Category? {
+        didSet {
+            loadItem()
+        }
+    }
+    
+    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
     
     
 //    let defaults = UserDefaults.standard
@@ -21,10 +28,12 @@ class doListViewController: UITableViewController {
         super.viewDidLoad()
         
         
+    
         
+        print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
         
        
-        loadItem()
+   
         
 //        if let item = defaults.array(forKey: "TodoListArray") as? [Item]{
 //            itemArray = item
@@ -33,7 +42,7 @@ class doListViewController: UITableViewController {
     }
 
     
-    //MARK: - Table View Data Source
+    //MARK: - TableView Data Source Methods
     
     
     
@@ -73,7 +82,11 @@ class doListViewController: UITableViewController {
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
        
-        itemArray[indexPath.row].done = !itemArray[indexPath.row].done
+      itemArray[indexPath.row].done = !itemArray[indexPath.row].done
+        
+        
+//        context.delete(itemArray[indexPath.row])
+//        itemArray.remove(at: indexPath.row)
         
         
 //        if itemArray[indexPath.row].done == false {
@@ -99,13 +112,15 @@ class doListViewController: UITableViewController {
         let action = UIAlertAction(title: "Add Item", style: .default) { (Action) in
             // What will happen when user pressed Add button on UIAlert
             
-            let newItem = Item()
+            
+            
+            let newItem = Item(context: self.context)
             newItem.title = textField.text!
+            newItem.done = false
+            newItem.parentCategory = self.selectedCategory
             
            
-//            let newItem = Item(context: self.context)
-//            newItem.title = textField.text!
-//            newItem.done = false
+
             self.itemArray.append(newItem)
             
             
@@ -135,36 +150,82 @@ class doListViewController: UITableViewController {
     
     func saveItem()
     {
-        let encoder = PropertyListEncoder()
+        
                   do {
                       
-                  let data = try encoder.encode(itemArray)
-                      try data.write(to: dataFilePath!)
+                   try context.save()
+                    
                   } catch {
-                      print("error encoding item array, \(error)")
+                     
+                    print("Error Saving COntext, \(error) ")
+                    
                   }
         self.tableView.reloadData()
     }
 
-    func loadItem(){
-        
+    func loadItem(with request : NSFetchRequest<Item> = Item.fetchRequest(), predicate :NSPredicate? = nil ){
+
       
-        if let data = try? Data(contentsOf: dataFilePath!) {
-            
-            let decoder = PropertyListDecoder()
-            do{
-                
-            itemArray = try decoder.decode([Item].self, from: data)
-                
-            }catch{
-                print("Error while Decoding, \(error)")
-                
-            }
+        
+        let categoryPredicate = NSPredicate(format: "parentCategory.name MATCHES %@ ", selectedCategory!.name!)
+        
+        if let additionalPredicate = predicate {
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [categoryPredicate,additionalPredicate])
+        }else{
+            request.predicate = categoryPredicate
         }
-            
         
+       
+       
         
+        do{
+       itemArray = try context.fetch(request)
+        
+        }catch{
+            print("Error in Fetching Data from context,\(error)")
+        }
+     self.tableView.reloadData()
+    }
+   
+    
+   
+}
+
+//MARK: - SearchBar Methods
+
+extension doListViewController : UISearchBarDelegate {
+    
+   
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        
+      let request : NSFetchRequest<Item> = Item.fetchRequest()
+                          
+                          let predicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!)
+                          
+                          request.predicate = predicate
+                          
+                          let sortDescriptor = NSSortDescriptor(key: "title", ascending: true)
+                          
+                          request.sortDescriptors = [sortDescriptor]
+                          
+                          do{
+                              itemArray = try context.fetch(request)
+                              
+                          }catch{
+                              print("Error in Fetching Data from context,\(error)")
+                          }
+                          tableView.reloadData()
     }
     
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        if searchBar.text?.count == 0 {
+            loadItem()
+            
+            DispatchQueue.main.async {
+                searchBar.resignFirstResponder()
+            }
+            
+        }
+    }
 }
 
